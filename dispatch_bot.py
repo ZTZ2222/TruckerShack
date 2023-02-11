@@ -39,16 +39,17 @@ async def cmd_start(message: types.Message):
     btn2 = types.inline_keyboard.InlineKeyboardButton("2 motos 🛵🏍", callback_data="2")
     btn3 = types.inline_keyboard.InlineKeyboardButton("moto & car 🏍🚗", callback_data="3")
     btn4 = types.inline_keyboard.InlineKeyboardButton("2 moto & car 🛵🏍🚗", callback_data="4")
-    markup.add(btn1, btn2, btn3, btn4)
+    btn5 = types.inline_keyboard.InlineKeyboardButton("3 moto 🏍🏍🏍", callback_data="5")
+    markup.add(btn1, btn2, btn3, btn4, btn5)
     
     await message.answer("Greetings! I am here to assist you in finding loads on Central Dispatch. May I have some information to start with? Please select an option to specify your needs:", reply_markup=markup)
 
-@dp.callback_query_handler(lambda c: c.data in ["1", "2", "3", "4"])
+@dp.callback_query_handler(lambda c: c.data in ["1", "2", "3", "4", "5"])
 async def process_callback_option(callback_query: types.CallbackQuery):
     chat_id = callback_query.from_user.id
     conversation_state[chat_id] = callback_query.data
 
-    options = {"1": "🚗🚙", "2": "🛵🏍", "3": "🏍🚗", "4": "🛵🏍🚗"}
+    options = {"1": "🚗🚙", "2": "🛵🏍", "3": "🏍🚗", "4": "🛵🏍🚗", "5": "🏍🏍🏍"}
     selected_option = options[callback_query.data]
     await bot.answer_callback_query(callback_query.id, text=f"Option {selected_option} selected.")
 
@@ -113,6 +114,12 @@ async def process_text_message(message: types.Message):
         df_n = await nearest_coordinates(df1, truck, n_neighbors=18)
         df_n2 = await nearest_coordinates(df2, truck, n_neighbors=25)
         df_db3 = await find_veh_db3(df_n, df_n, df_n2, truck, filter_by=1.75)
+        await bot.send_message(chat_id=chat_id, text=f"I was able to locate {df_db3.shape[0]} itineraries.")
+        await card_sender_db3(chat_id, df_db3, input_text)
+    elif option == "5":
+        df1 = df.query('`Vehicle Type` in ["MOTORCYCLE", "ATV"] and RPM >= 0.3 and Rate >= 300').copy()
+        df_n = await nearest_coordinates(df1, truck, n_neighbors=28)
+        df_db3 = await find_veh_db4(df_n, truck, filter_by=1)
         await bot.send_message(chat_id=chat_id, text=f"I was able to locate {df_db3.shape[0]} itineraries.")
         await card_sender_db3(chat_id, df_db3, input_text)
     else:
@@ -431,6 +438,51 @@ async def find_veh_db3(df, df2, df3, truck, filter_by=1.65):
     notifications = [i for i in distance_matrix_moto_car if i['total_rpm'] >= filter_by]
     return pd.DataFrame(notifications)
 
+
+async def find_veh_db4(df, truck, filter_by=1.2):
+    # FROM 3 Dataframes
+    # Get all combinations of cargo pairs
+    cargo_triplets = list(itertools.combinations(df.index, 3))
+
+    # Calculate distances between pickups and deliveries for each triple
+    distance_matrix_moto_car = []
+
+    for i, j, k in cargo_triplets:
+        pickup1 = (df.loc[i, 'P_lat'], df.loc[i, 'P_lon'])
+        pickup2 = (df.loc[j, 'P_lat'], df.loc[j, 'P_lon'])
+        pickup3 = (df.loc[k, 'P_lat'], df.loc[k, 'P_lon'])
+        delivery1 = (df.loc[i, 'D_lat'], df.loc[i, 'D_lon'])
+        delivery2 = (df.loc[j, 'D_lat'], df.loc[j, 'D_lon'])
+        delivery3 = (df.loc[k, 'D_lat'], df.loc[k, 'D_lon'])
+
+        G = nx.Graph()
+        nodes = [pickup1, pickup2, pickup3, delivery1, delivery2, delivery3, truck]
+        for node in nodes:
+            G.add_node(node)
+        for x in range(len(nodes) - 1):
+            for y in range(x+1, len(nodes)):
+                G.add_edge(nodes[x], nodes[y], weight=geodesic(nodes[x], nodes[y]).miles)
+
+        routes = []
+        for pick_up_permutation in itertools.permutations([pickup1, pickup2, pickup3]):
+            for delivery_permutation in itertools.permutations([delivery1, delivery2, delivery3]):
+                route = [truck] + list(pick_up_permutation) + list(delivery_permutation)
+                distances = []
+                for z in range(len(route) - 1):
+                    distances.append(nx.shortest_path_length(G, route[z], route[z+1], weight='weight'))
+                sum_distance = sum(distances)
+                routes.append(sum_distance)
+
+        min_distance = min(routes)
+        min_route = routes.index(min_distance)
+        road_multiplier = 1.25
+        total_distance = round(min_distance * road_multiplier)
+        total_rate = df.loc[i, 'Rate'] + df.loc[j, 'Rate'] + df.loc[k, 'Rate']
+        rpm = round(total_rate / total_distance, 2)
+        distance_matrix_moto_car.append({"total_rate": total_rate, "total_distance": total_distance, "total_rpm": rpm, "min_route": min_route, **{col: df.loc[i, col] for col in df.columns}, **{col+'-2': df.loc[j, col] for col in df.columns}, **{col+'-3': df.loc[k, col] for col in df.columns}})
+
+    notifications = [i for i in distance_matrix_moto_car if i['total_rpm'] >= filter_by]
+    return pd.DataFrame(notifications)
 
 
 
