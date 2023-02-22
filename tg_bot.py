@@ -11,8 +11,8 @@ from aiogram.utils.markdown import hbold
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-input_text = "Chattanooga, TN, 37421"
-lat, lon = 35.3813808,-81.3835815
+input_text = "Perth Amboy, NJ"
+lat, lon = 40.510738, -74.268608
 canada = ['AB','BC','MB','NB','NL','NS','ON','PE','QC','SK','Ca']
 ########################################################################################################
 
@@ -35,29 +35,37 @@ async def new_loads_notification():
         df_n = await nearest_coordinates(df1, truck, n_neighbors=30)
         df_n2 = await nearest_coordinates(df2, truck, n_neighbors=40)
         # For triplets
-        df_n_db3 = await nearest_coordinates(df1, truck, n_neighbors=18)
-        df_n2_db3 = await nearest_coordinates(df2, truck, n_neighbors=25)
+        # df_n_db3 = await nearest_coordinates(df1, truck, n_neighbors=18)
+        # df_n2_db3 = await nearest_coordinates(df2, truck, n_neighbors=25)
 
+        df_db_moto = await find_veh_db(df_n, truck, filter_by=0.5)
+        df_db_car = await find_veh_db(df_n2, truck, filter_by=1.2)
         df_db1 = await find_veh_db1(df_n, truck, filter_by=1)
         df_db2 = await find_veh_db2(df_n, df_n2, truck, filter_by=1.55)
-        df_db3 = await find_veh_db3(df_n_db3, df_n_db3, df_n2_db3, truck, filter_by=1.75)
+        # df_db3 = await find_veh_db3(df_n_db3, df_n_db3, df_n2_db3, truck, filter_by=1.75)
 
+        df_n_n_db_moto = await send_new_notifications(df_db_moto, 'nn_sent_db_moto')
+        df_n_n_db_car = await send_new_notifications(df_db_car, 'nn_sent_db_car')
         df_n_n_db1 = await send_new_notifications(df_db1, 'nn_sent_db1')
         df_n_n_db2 = await send_new_notifications(df_db2, 'nn_sent_db2')
-        df_n_n_db3 = await send_new_notifications(df_db3, 'nn_sent_db3')
+        # df_n_n_db3 = await send_new_notifications(df_db3, 'nn_sent_db3')
 
+        if not df_n_n_db_moto.empty:
+            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
+            await card_sender_db(user_id, df_n_n_db_moto, input_text)
+        if not df_n_n_db_car.empty:
+            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
+            await card_sender_db(user_id, df_n_n_db_car, input_text)
         if not df_n_n_db1.empty:
             await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
             await card_sender(user_id, df_n_n_db1, input_text)
-            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
         if not df_n_n_db2.empty:
             await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
             await card_sender(user_id, df_n_n_db2, input_text)
-            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
-        if not df_n_n_db3.empty:
-            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
-            await card_sender_db3(user_id, df_n_n_db3, input_text)
-            await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
+        # if not df_n_n_db3.empty:
+        #     await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
+        #     await card_sender_db3(user_id, df_n_n_db3, input_text)
+        #     await bot.send_message(user_id, hbold('Notifications  ➡️  ➡️   ➡️  📩  ⬅️  ⬅️   ⬅️'))
         
         await asyncio.sleep(120)
 

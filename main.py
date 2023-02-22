@@ -3,6 +3,7 @@ import pandas as pd
 import asyncio
 from datetime import datetime
 import aiohttp
+import os
 
 
 url = 'https://prod-search-app-bff.awscal2.manheim.com/api/open-search'
@@ -35,7 +36,7 @@ json_data = {
     'readyToShipWithinDays': '14',
     'minimumPricePerMile': None,
     'offset': 0,
-    'limit': 500,
+    'limit': 150,
     'sortFields': [{'name': 'PICKUP', 'direction': 'ASC',},{'name': 'DELIVERYMETROAREA','direction': 'ASC',},],
     'shipperIds': [],
     'desiredDeliveryDate': None,
@@ -158,7 +159,7 @@ async def gather_data():
         else:
             print(status_code)
         tasks = []
-        for offset in range(0, total_items, 500):
+        for offset in range(0, total_items, 150):
             task = asyncio.create_task(get_data(session, headers, offset))
             tasks.append(task)  
         await asyncio.gather(*tasks)
@@ -180,7 +181,7 @@ async def gather_data():
         else:
             print(status_code)
         tasks = []
-        for offset in range(0, total_items, 500):
+        for offset in range(0, total_items, 150):
             task = asyncio.create_task(get_data(session, headers, offset))
             tasks.append(task)  
         await asyncio.gather(*tasks)
@@ -189,10 +190,26 @@ async def gather_data():
     df.to_csv(f'csv_data/csv_hourly/{cur_time}.csv', index=False) 
     df.to_csv('csv_data/live.csv', index=False)
     df.to_csv('/home/ztz/Desktop/MyProjects/website/csv_data/live.csv', index=False)
-    
+
+
+async def concat_hdata():
+    cur_day = datetime.now().strftime('%m_%d_%Y')
+    columns = ['Vehicle Type', 'Pickup City', 'Pickup State', 'Pickup ZIP', 'Delivery City', 'Delivery State', 'Delivery ZIP', 'Rate', 'Payment Method', 'Distance', 'Veh_qty', 'Vehicle Info', 'Vehicle Condition', 'Trailer Type', 'Pick-Up Date', 'Order ID', 'Additional Info', 'Company Name', 'Phone', 'Email', 'Rating', 'Pickup metro area', 'Delivery metro area', 'P_lat', 'P_lon', 'D_lat', 'D_lon']
+    file_path = 'csv_data/csv_hourly'
+    file_list = os.listdir(file_path)
+    df = pd.concat([pd.read_csv(f"csv_data/csv_hourly/{f}") for f in file_list], ignore_index=True)
+    df1 = df.sort_values('Time').drop_duplicates(subset=columns, keep='first')
+    df2 = df.sort_values('Time').drop_duplicates(subset=columns, keep='last')
+    df = df1.merge(df2, on=columns, suffixes=('_first', '_last'))
+    df.to_csv(f'csv_data/csv_daily/{cur_day}.csv', index=False)
+    for f in file_list:
+        path_to_file = os.path.join(file_path, f)
+        os.remove(path_to_file)
 
 
 async def main():
+    if len(os.listdir('csv_data/csv_hourly')) > 80:
+        await concat_hdata()
     while True:
         await gather_data()
         await asyncio.sleep(180)

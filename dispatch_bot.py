@@ -35,21 +35,22 @@ async def cmd_start(message: types.Message):
     chat_id = message.from_user.id
     # Setup keyboard
     markup = types.inline_keyboard.InlineKeyboardMarkup()
-    btn1 = types.inline_keyboard.InlineKeyboardButton("2 cars 🚗🚙", callback_data="1")
-    btn2 = types.inline_keyboard.InlineKeyboardButton("2 motos 🛵🏍", callback_data="2")
-    btn3 = types.inline_keyboard.InlineKeyboardButton("moto & car 🏍🚗", callback_data="3")
-    btn4 = types.inline_keyboard.InlineKeyboardButton("2 moto & car 🛵🏍🚗", callback_data="4")
-    btn5 = types.inline_keyboard.InlineKeyboardButton("3 moto 🏍🏍🏍", callback_data="5")
-    markup.add(btn1, btn2, btn3, btn4, btn5)
+    btn1 = types.inline_keyboard.InlineKeyboardButton("🚗🚙(CC)", callback_data="1")
+    btn2 = types.inline_keyboard.InlineKeyboardButton("🛵🏍(MM)", callback_data="2")
+    btn3 = types.inline_keyboard.InlineKeyboardButton("🏍🚗(MC)", callback_data="3")
+    btn4 = types.inline_keyboard.InlineKeyboardButton("🛵🏍🚗(MMC)", callback_data="4")
+    btn5 = types.inline_keyboard.InlineKeyboardButton("🏍🛵🏍(MMM)", callback_data="5")
+    btn6 = types.inline_keyboard.InlineKeyboardButton("🚗(C)", callback_data="6")
+    markup.add(btn6, btn2, btn3, btn1, btn5, btn4)
     
     await message.answer("Greetings! I am here to assist you in finding loads on Central Dispatch. May I have some information to start with? Please select an option to specify your needs:", reply_markup=markup)
 
-@dp.callback_query_handler(lambda c: c.data in ["1", "2", "3", "4", "5"])
+@dp.callback_query_handler(lambda c: c.data in ["1", "2", "3", "4", "5", "6"])
 async def process_callback_option(callback_query: types.CallbackQuery):
     chat_id = callback_query.from_user.id
     conversation_state[chat_id] = callback_query.data
 
-    options = {"1": "🚗🚙", "2": "🛵🏍", "3": "🏍🚗", "4": "🛵🏍🚗", "5": "🏍🏍🏍"}
+    options = {"1": "🚗🚙", "2": "🛵🏍", "3": "🏍🚗", "4": "🛵🏍🚗", "5": "🏍🏍🏍", "6": "🚗"}
     selected_option = options[callback_query.data]
     await bot.answer_callback_query(callback_query.id, text=f"Option {selected_option} selected.")
 
@@ -122,9 +123,57 @@ async def process_text_message(message: types.Message):
         df_db3 = await find_veh_db4(df_n, truck, filter_by=1)
         await bot.send_message(chat_id=chat_id, text=f"I was able to locate {df_db3.shape[0]} itineraries.")
         await card_sender_db3(chat_id, df_db3, input_text)
+    elif option == "6":
+        df2 = df.query('`Vehicle Type` in ["CAR", "SUV", "PICKUP"] and RPM >= 1.4 and Rate >= 400').copy()
+        df_n = await nearest_coordinates(df2, truck, n_neighbors=50)
+        df_db1 = await find_veh_db(df_n, truck, filter_by=1.4)
+        await bot.send_message(chat_id=chat_id, text=f"I was able to locate {df_db1.shape[0]} itineraries.")
+        await card_sender_db(chat_id, df_db1, input_text)
     else:
         await bot.send_message(chat_id, "Option is not recognized, please click the option again.")
         return
+
+
+async def card_sender_db(chat_id, df, truck):
+    if df.empty:
+        return
+
+    df['Pick-Up Date'] = df['Pick-Up Date'].apply(lambda x: 'ASAP' if pd.to_datetime(x) <= pd.Timestamp(datetime.datetime.now()).normalize() else x)
+    df = df.sort_values('total_rpm', ascending=False).reset_index(drop=True)
+
+    counter = 0
+    
+    for i in range(len(df)):
+        # Route
+        p = ','.join([df.loc[i, 'Pickup City'], df.loc[i, 'Pickup State'], df.loc[i, 'Pickup ZIP']])
+        d = ','.join([df.loc[i, 'Delivery City'], df.loc[i, 'Delivery State'], df.loc[i, 'Delivery ZIP']])
+        route = '  =>  '.join([truck, p, d])
+        # Link
+        origin = truck.replace(", ", "+").replace(",", "+").replace(" ", "+")
+        pickup = '+'.join([df.loc[i, 'Pickup City'], df.loc[i, 'Pickup State'], df.loc[i, 'Pickup ZIP']]).replace(" ", "+")
+        delivery = '+'.join([df.loc[i, 'Delivery City'], df.loc[i, 'Delivery State'], df.loc[i, 'Delivery ZIP']]).replace(" ", "+")
+        link = f"https://www.google.com/maps/dir/?api=1&origin={origin}&waypoints={pickup}&destination={delivery}&travelmode=driving"
+
+        card =  f"{hbold('Total Rate:')} 💵 ${round(df['total_rate'].iloc[i])}  🕘 ${round(df['total_rpm'].iloc[i], 2)}/mi  🚚 {round(df['total_distance'].iloc[i])}* miles\n" \
+                f"{hbold('Vehicles:')} {(df['Vehicle Type'].iloc[i])}\n" \
+                f"{hbold('Route:')} {hlink(route, link)}\n" \
+                f"{hbold('----------------------------------')}\n" \
+                f"{hbold('Vehicle-1:')} {(df['Vehicle Info'].iloc[i])}\n" \
+                f"{hbold('Price:')} ${df['Rate'].iloc[i]}, ${df['RPM'].iloc[i]}/mi ({df['Distance'].iloc[i]} miles)\n" \
+                f"{hbold('Pickup Date:')} {(df['Pick-Up Date'].iloc[i])}\n" \
+                f"{hbold('Pickup:')} {(p)} ({df['Pickup metro area'].iloc[i]})\n" \
+                f"{hbold('Delivery:')} {(d)} ({df['Delivery metro area'].iloc[i]})\n" \
+                f"{hbold('Order ID:')} {df['Order ID'].iloc[i]}\n" \
+                f"{hbold('Company Name:')} {df['Company Name'].iloc[i]}\n" \
+                f"{hbold('Contacts:')} {hcode(df['Phone'].iloc[i])}\n" \
+                f"{hbold('Additional Info:')} {df['Additional Info'].iloc[i]}\n" \
+                f"{hitalic(df['Vehicle Condition'].iloc[i])}, {hitalic(df['Trailer Type'].iloc[i])}\n" \
+                
+
+        await bot.send_message(chat_id=chat_id, text=card)
+        counter += 1
+        if counter % 10 == 0:
+            await asyncio.sleep(2)
 
 
 async def card_sender(chat_id, df, truck):
@@ -306,6 +355,29 @@ async def nearest_coordinates(df, truck=[35.017089,-85.1323228], n_neighbors=20)
     tree = BallTree(X, metric='haversine')
     distances, indices = tree.query(np.deg2rad([truck]), return_distance=True, k=n_neighbors)
     return df.iloc[indices[0]]
+
+
+async def find_veh_db(df, truck, filter_by=1):
+    # Calculate distances between pickups and deliveries for each pair
+    distance_matrix_cars = []
+
+    for i in df.index:
+        pickup = (df.loc[i, 'P_lat'], df.loc[i, 'P_lon'])
+        delivery = (df.loc[i, 'D_lat'], df.loc[i, 'D_lon'])
+        
+        route = [truck, pickup, delivery]
+        distance = sum(geodesic(route[k-1], route[k]).miles for k in range(1, len(route)))
+
+        road_multiplier = 1.19
+        total_distance = distance * road_multiplier
+        total_rate = df.loc[i, 'Rate']
+        rpm = total_rate/total_distance
+        distance_matrix_cars.append({"total_rate": total_rate, "total_distance": total_distance, "total_rpm": rpm, **{col: df.loc[i, col] for col in df.columns}})
+    
+
+    notifications = [z for z in distance_matrix_cars if z['total_rpm'] >= filter_by]
+    # Convert the distance matrix to a dataframe
+    return pd.DataFrame(notifications)
 
 
 async def find_veh_db1(df, truck, filter_by=1):
