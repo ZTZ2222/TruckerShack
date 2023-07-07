@@ -1,9 +1,10 @@
 config.py
 ca.crt
-__pycache__/
-.idea/
+__pycache__
+.idea
 chromedriver/
 csv_data/
 google_drive_upload/
 notebook.ipynb
 token.txt
+.venv
