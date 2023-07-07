@@ -8,3 +8,4 @@ google_drive_upload
 notebook.ipynb
 token.txt
 .venv
+ca.crt
